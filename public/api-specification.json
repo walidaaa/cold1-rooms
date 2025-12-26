@@ -1,0 +1,926 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Cold Room Monitoring API",
+    "version": "1.0.0",
+    "description": "API specification for pharmaceutical cold room monitoring system"
+  },
+  "servers": [
+    {
+      "url": "/api/v1",
+      "description": "API Base URL"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "Role": {
+        "type": "string",
+        "enum": ["ADMIN", "USER"],
+        "description": "User role in the system"
+      },
+      "RoomStatus": {
+        "type": "string",
+        "enum": ["ACTIVE", "INACTIVE", "MAINTENANCE"],
+        "description": "Current status of a cold room"
+      },
+      "AlertType": {
+        "type": "string",
+        "enum": ["TEMPERATURE", "HUMIDITY", "DOOR", "POWER", "SENSOR"],
+        "description": "Type of alert"
+      },
+      "AlertStatus": {
+        "type": "string",
+        "enum": ["ACTIVE", "ACKNOWLEDGED", "RESOLVED"],
+        "description": "Current status of an alert"
+      },
+      "SmsStatus": {
+        "type": "string",
+        "enum": ["SENT", "DELIVERED", "FAILED", "PENDING"],
+        "description": "SMS delivery status"
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "description": "Unique user identifier" },
+          "name": { "type": "string", "description": "User full name" },
+          "email": { "type": "string", "format": "email", "description": "User email address" },
+          "role": { "$ref": "#/components/schemas/Role" },
+          "smsEnabled": { "type": "boolean", "description": "Whether SMS notifications are enabled" },
+          "assignedRoomIds": {
+            "type": "array",
+            "items": { "type": "integer" },
+            "description": "IDs of rooms assigned to this user"
+          },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "name", "email", "role"]
+      },
+      "UserPhone": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "description": "Unique phone identifier" },
+          "userId": { "type": "integer", "description": "Associated user ID" },
+          "phoneNumber": { "type": "string", "description": "Phone number for SMS" },
+          "isActive": { "type": "boolean", "description": "Whether phone is active for alerts" },
+          "isPrimary": { "type": "boolean", "description": "Whether this is the primary phone" }
+        },
+        "required": ["id", "userId", "phoneNumber"]
+      },
+      "Room": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "description": "Unique room identifier" },
+          "name": { "type": "string", "description": "Room name" },
+          "hardwareId": { "type": "string", "description": "Hardware device identifier" },
+          "status": { "$ref": "#/components/schemas/RoomStatus" },
+          "temperature": { "type": "number", "description": "Current temperature in Celsius" },
+          "humidity": { "type": "number", "description": "Current humidity percentage" },
+          "tempMin": { "type": "number", "description": "Minimum temperature threshold" },
+          "tempMax": { "type": "number", "description": "Maximum temperature threshold" },
+          "humidityMin": { "type": "number", "description": "Minimum humidity threshold" },
+          "humidityMax": { "type": "number", "description": "Maximum humidity threshold" },
+          "lastReading": { "type": "string", "format": "date-time" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "name", "status", "tempMin", "tempMax", "humidityMin", "humidityMax"]
+      },
+      "Alert": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "description": "Unique alert identifier" },
+          "roomId": { "type": "integer", "description": "Associated room ID" },
+          "type": { "$ref": "#/components/schemas/AlertType" },
+          "status": { "$ref": "#/components/schemas/AlertStatus" },
+          "message": { "type": "string", "description": "Alert message" },
+          "value": { "type": "number", "description": "Recorded value that triggered alert" },
+          "threshold": { "type": "number", "description": "Threshold that was exceeded" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "acknowledgedAt": { "type": "string", "format": "date-time" },
+          "resolvedAt": { "type": "string", "format": "date-time" },
+          "acknowledgedBy": { "type": "integer", "description": "User ID who acknowledged" }
+        },
+        "required": ["id", "roomId", "type", "status", "message", "createdAt"]
+      },
+      "SmsLog": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "description": "Unique SMS log identifier" },
+          "alertId": { "type": "integer", "description": "Associated alert ID" },
+          "userId": { "type": "integer", "description": "Recipient user ID" },
+          "phoneNumber": { "type": "string", "description": "Recipient phone number" },
+          "message": { "type": "string", "description": "SMS content" },
+          "status": { "$ref": "#/components/schemas/SmsStatus" },
+          "sentAt": { "type": "string", "format": "date-time" },
+          "deliveredAt": { "type": "string", "format": "date-time" },
+          "errorMessage": { "type": "string", "description": "Error message if failed" }
+        },
+        "required": ["id", "userId", "phoneNumber", "message", "status", "sentAt"]
+      },
+      "Reading": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "description": "Unique reading identifier" },
+          "roomId": { "type": "integer", "description": "Associated room ID" },
+          "temperature": { "type": "number", "description": "Temperature value" },
+          "humidity": { "type": "number", "description": "Humidity value" },
+          "recordedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "roomId", "temperature", "humidity", "recordedAt"]
+      },
+      "LoginRequest": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "password": { "type": "string", "minLength": 8 }
+        },
+        "required": ["email", "password"]
+      },
+      "LoginResponse": {
+        "type": "object",
+        "properties": {
+          "accessToken": { "type": "string" },
+          "refreshToken": { "type": "string" },
+          "user": { "$ref": "#/components/schemas/User" },
+          "expiresIn": { "type": "integer" }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string" },
+          "message": { "type": "string" },
+          "statusCode": { "type": "integer" }
+        }
+      }
+    }
+  },
+  "security": [{ "bearerAuth": [] }],
+  "paths": {
+    "/auth/login": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "User login",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful login",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LoginResponse" }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "User logout",
+        "responses": {
+          "200": { "description": "Successfully logged out" }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Refresh access token",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "refreshToken": { "type": "string" }
+                },
+                "required": ["refreshToken"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Token refreshed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LoginResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users": {
+      "get": {
+        "tags": ["Users"],
+        "summary": "Get all users",
+        "description": "Admin only - returns all users",
+        "parameters": [
+          { "name": "role", "in": "query", "schema": { "$ref": "#/components/schemas/Role" } },
+          { "name": "smsEnabled", "in": "query", "schema": { "type": "boolean" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of users",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/User" } },
+                    "total": { "type": "integer" },
+                    "page": { "type": "integer" },
+                    "limit": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Users"],
+        "summary": "Create new user",
+        "description": "Admin only - create a new user",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string", "minLength": 8 },
+                  "role": { "$ref": "#/components/schemas/Role" },
+                  "smsEnabled": { "type": "boolean" },
+                  "assignedRoomIds": { "type": "array", "items": { "type": "integer" } }
+                },
+                "required": ["name", "email", "password", "role"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/User" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users/{id}": {
+      "get": {
+        "tags": ["Users"],
+        "summary": "Get user by ID",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "User details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/User" }
+              }
+            }
+          },
+          "404": { "description": "User not found" }
+        }
+      },
+      "put": {
+        "tags": ["Users"],
+        "summary": "Update user",
+        "description": "Admin only - update user details",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "email": { "type": "string", "format": "email" },
+                  "role": { "$ref": "#/components/schemas/Role" },
+                  "smsEnabled": { "type": "boolean" },
+                  "assignedRoomIds": { "type": "array", "items": { "type": "integer" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/User" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Users"],
+        "summary": "Delete user",
+        "description": "Admin only - delete a user",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "204": { "description": "User deleted" },
+          "404": { "description": "User not found" }
+        }
+      }
+    },
+    "/users/{id}/phones": {
+      "get": {
+        "tags": ["Users"],
+        "summary": "Get user phone numbers",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of phone numbers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/UserPhone" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Users"],
+        "summary": "Add phone number to user",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "phoneNumber": { "type": "string" },
+                  "isPrimary": { "type": "boolean" }
+                },
+                "required": ["phoneNumber"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Phone added",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserPhone" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users/{userId}/phones/{phoneId}": {
+      "put": {
+        "tags": ["Users"],
+        "summary": "Update phone number",
+        "parameters": [
+          { "name": "userId", "in": "path", "required": true, "schema": { "type": "integer" } },
+          { "name": "phoneId", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "phoneNumber": { "type": "string" },
+                  "isActive": { "type": "boolean" },
+                  "isPrimary": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Phone updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserPhone" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Users"],
+        "summary": "Delete phone number",
+        "parameters": [
+          { "name": "userId", "in": "path", "required": true, "schema": { "type": "integer" } },
+          { "name": "phoneId", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "204": { "description": "Phone deleted" }
+        }
+      }
+    },
+    "/rooms": {
+      "get": {
+        "tags": ["Rooms"],
+        "summary": "Get all cold rooms",
+        "parameters": [
+          { "name": "status", "in": "query", "schema": { "$ref": "#/components/schemas/RoomStatus" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of rooms",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/Room" } },
+                    "total": { "type": "integer" },
+                    "page": { "type": "integer" },
+                    "limit": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Rooms"],
+        "summary": "Create new room",
+        "description": "Admin only - create a new cold room",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "hardwareId": { "type": "string" },
+                  "status": { "$ref": "#/components/schemas/RoomStatus" },
+                  "tempMin": { "type": "number" },
+                  "tempMax": { "type": "number" },
+                  "humidityMin": { "type": "number" },
+                  "humidityMax": { "type": "number" }
+                },
+                "required": ["name", "tempMin", "tempMax", "humidityMin", "humidityMax"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Room created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Room" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rooms/{id}": {
+      "get": {
+        "tags": ["Rooms"],
+        "summary": "Get room by ID",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Room details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Room" }
+              }
+            }
+          },
+          "404": { "description": "Room not found" }
+        }
+      },
+      "put": {
+        "tags": ["Rooms"],
+        "summary": "Update room",
+        "description": "Admin only - update room settings and thresholds",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "hardwareId": { "type": "string" },
+                  "status": { "$ref": "#/components/schemas/RoomStatus" },
+                  "tempMin": { "type": "number" },
+                  "tempMax": { "type": "number" },
+                  "humidityMin": { "type": "number" },
+                  "humidityMax": { "type": "number" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Room updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Room" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Rooms"],
+        "summary": "Delete room",
+        "description": "Admin only - delete a cold room",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "204": { "description": "Room deleted" },
+          "404": { "description": "Room not found" }
+        }
+      }
+    },
+    "/rooms/{id}/readings": {
+      "get": {
+        "tags": ["Rooms"],
+        "summary": "Get room readings history",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } },
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 100 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of readings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Reading" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rooms/{id}/alerts": {
+      "get": {
+        "tags": ["Rooms"],
+        "summary": "Get room alerts",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } },
+          { "name": "status", "in": "query", "schema": { "$ref": "#/components/schemas/AlertStatus" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of alerts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Alert" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/alerts": {
+      "get": {
+        "tags": ["Alerts"],
+        "summary": "Get all alerts",
+        "parameters": [
+          { "name": "status", "in": "query", "schema": { "$ref": "#/components/schemas/AlertStatus" } },
+          { "name": "type", "in": "query", "schema": { "$ref": "#/components/schemas/AlertType" } },
+          { "name": "roomId", "in": "query", "schema": { "type": "integer" } },
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of alerts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/Alert" } },
+                    "total": { "type": "integer" },
+                    "page": { "type": "integer" },
+                    "limit": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/alerts/{id}": {
+      "get": {
+        "tags": ["Alerts"],
+        "summary": "Get alert by ID",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Alert" }
+              }
+            }
+          },
+          "404": { "description": "Alert not found" }
+        }
+      },
+      "put": {
+        "tags": ["Alerts"],
+        "summary": "Update alert status",
+        "description": "Acknowledge or resolve an alert",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": { "$ref": "#/components/schemas/AlertStatus" }
+                },
+                "required": ["status"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Alert updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Alert" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/alerts/{id}/acknowledge": {
+      "post": {
+        "tags": ["Alerts"],
+        "summary": "Acknowledge alert",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert acknowledged",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Alert" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/alerts/{id}/resolve": {
+      "post": {
+        "tags": ["Alerts"],
+        "summary": "Resolve alert",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert resolved",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Alert" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sms": {
+      "get": {
+        "tags": ["SMS"],
+        "summary": "Get SMS logs",
+        "description": "Admin only - get all SMS logs",
+        "parameters": [
+          { "name": "status", "in": "query", "schema": { "$ref": "#/components/schemas/SmsStatus" } },
+          { "name": "userId", "in": "query", "schema": { "type": "integer" } },
+          { "name": "alertId", "in": "query", "schema": { "type": "integer" } },
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of SMS logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/SmsLog" } },
+                    "total": { "type": "integer" },
+                    "page": { "type": "integer" },
+                    "limit": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["SMS"],
+        "summary": "Send test SMS",
+        "description": "Admin only - send a test SMS",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "phoneNumber": { "type": "string" },
+                  "message": { "type": "string" }
+                },
+                "required": ["phoneNumber", "message"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SMS sent",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SmsLog" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sms/{id}": {
+      "get": {
+        "tags": ["SMS"],
+        "summary": "Get SMS log by ID",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "SMS log details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SmsLog" }
+              }
+            }
+          },
+          "404": { "description": "SMS log not found" }
+        }
+      }
+    },
+    "/dashboard/stats": {
+      "get": {
+        "tags": ["Dashboard"],
+        "summary": "Get dashboard statistics",
+        "responses": {
+          "200": {
+            "description": "Dashboard statistics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "totalRooms": { "type": "integer" },
+                    "activeRooms": { "type": "integer" },
+                    "criticalRooms": { "type": "integer" },
+                    "activeAlerts": { "type": "integer" },
+                    "totalUsers": { "type": "integer" },
+                    "smsSentToday": { "type": "integer" },
+                    "averageTemperature": { "type": "number" },
+                    "systemStatus": { "type": "string", "enum": ["operational", "degraded", "down"] }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dashboard/rooms-overview": {
+      "get": {
+        "tags": ["Dashboard"],
+        "summary": "Get rooms overview for dashboard",
+        "responses": {
+          "200": {
+            "description": "Rooms overview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": { "type": "integer" },
+                      "name": { "type": "string" },
+                      "status": { "$ref": "#/components/schemas/RoomStatus" },
+                      "temperature": { "type": "number" },
+                      "humidity": { "type": "number" },
+                      "alertCount": { "type": "integer" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    { "name": "Authentication", "description": "Login, logout, and token management" },
+    { "name": "Users", "description": "User management (Admin only for write operations)" },
+    { "name": "Rooms", "description": "Cold room management" },
+    { "name": "Alerts", "description": "Alert management and acknowledgment" },
+    { "name": "SMS", "description": "SMS logs and test messaging" },
+    { "name": "Dashboard", "description": "Dashboard statistics and overview" }
+  ]
+}
